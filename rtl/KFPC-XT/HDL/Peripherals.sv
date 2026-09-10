@@ -189,7 +189,13 @@ module PERIPHERALS #(
         input   logic   [3:0]   crt_h_offset,
         input   logic   [2:0]   crt_v_offset,
         input   logic   [2:0]   vsync_width_osd,
-        input   logic   [2:0]   hsync_width_osd
+        input   logic   [2:0]   hsync_width_osd,
+        // Passive keyboard-path observability for the SPK286 bring-up page.
+        // These signals never feed machine logic.
+        output  logic   [7:0]   keyboard_debug_keycode,
+        output  logic           keyboard_debug_irq,
+        output  logic   [7:0]   keyboard_debug_port_b,
+        output  logic           keyboard_debug_pic_int
         
     );
 
@@ -550,6 +556,11 @@ module PERIPHERALS #(
 
     wire    clear_keycode = port_b_out[7];
     wire    ps2_reset_n   = port_b_out[6];
+
+    assign keyboard_debug_keycode = keycode_buf;
+    assign keyboard_debug_irq = keybord_irq;
+    assign keyboard_debug_port_b = port_b_out;
+    assign keyboard_debug_pic_int = interrupt_to_cpu_buf;
 
     always_ff @(posedge clock, posedge reset)
     begin
