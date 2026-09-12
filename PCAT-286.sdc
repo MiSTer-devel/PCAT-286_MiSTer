@@ -16,7 +16,15 @@ set CLOCK_14_318    {emu:emu|clk_14_318|q}
 
 # clk_14_318 derives from clk_28_636 (PLL video - precise frequency)
 create_generated_clock -name clk_14_318 -source [get_pins $CLOCK_VIDEO_BASE] -divide_by 2 [get_pins $CLOCK_14_318]
-create_generated_clock -name SDRAM_CLK -source [get_pins $CLOCK_CHIP] [get_ports { SDRAM_CLK }]
+# AT_PROFILE drives SDRAM_CLK directly from emu_at.CLK_50M, connected to
+# FPGA_CLK2_50 by sys_top. Its legacy emu|pll instance does not exist. Keep
+# the XT clock unchanged, and describe the AT's actual 1:1, zero-phase wire
+# so the SDRAM input/output delays below cannot silently be discarded.
+if {[get_collection_size [get_clocks -nowarn {emu|u_at_video_pll|pll_system_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk}]] != 0} {
+    create_generated_clock -name SDRAM_CLK -source [get_ports {FPGA_CLK2_50}] -divide_by 1 [get_ports {SDRAM_CLK}]
+} else {
+    create_generated_clock -name SDRAM_CLK -source [get_pins $CLOCK_CHIP] [get_ports {SDRAM_CLK}]
+}
 create_clock -name VCLK_SDIO -period 20.000
 
 # SPLASH
