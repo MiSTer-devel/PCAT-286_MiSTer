@@ -23,6 +23,9 @@ module emu_at
     localparam CONF_STR_AT = {
         "PCAT-286;",
         CONF_STR_HALT_AT,
+        "S0,IMGIMAVFD,Floppy A:;",
+        "S1,IMGIMAVFD,Floppy B:;",
+        "OJK,Write Protect,None,A:,B:,A: & B:;",
         "-;",
         "P1,System & BIOS;",
         "P1-;",
@@ -36,6 +39,9 @@ module emu_at
         "P1O[79],Boot Fetch Trace,Off,On;",
         "P1O[78:74],Boot Fetch Index,00,01,02,03,04,05,06,07,08,09,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31;",
         "P1O[80],Boot Fetch View,Address,Data;",
+        "P1O[81],First Fault Trace,Off,On;",
+        "P1O[82],Landmark RAM Trace,Off,On;",
+        "P1O[84:83],RAM Trace Page,Compare,Read path,SDRAM,Registers;",
         "P1-;",
         "-;",
         "R0,Reset & apply settings;",
@@ -45,11 +51,32 @@ module emu_at
 
     wire [35:0] EXT_BUS;
     wire [21:0] gamma_bus;
-    // There is no management-extension owner in this first AT profile.
-    // Explicitly drive the extension-select bits low so hps_io returns its
-    // normal framework response on HPS_BUS instead of observing Z/X.
-    assign EXT_BUS[32] = 1'b0;
     assign gamma_bus[21] = 1'b0;
+
+    wire [15:0] at_mgmt_din;
+    wire [15:0] at_mgmt_dout;
+    wire [15:0] at_mgmt_address;
+    wire        at_mgmt_read;
+    wire        at_mgmt_write;
+    wire [1:0]  at_floppy_present;
+    wire [1:0]  at_floppy_request;
+    wire [7:0]  at_mgmt_request = {at_floppy_request, 6'b000000};
+
+    // Use the same MiSTer management transport as the XT profile and
+    // ao486/z486. Requests 7:6 are floppy A/B. RTC/CMOS updates are
+    // host-pushed writes in the F4xx window and therefore need no request bit.
+    hps_ext hps_ext_at (
+        .clk_sys     (CLK_50M),
+        .EXT_BUS     (EXT_BUS),
+        .ext_din     (at_mgmt_din),
+        .ext_dout    (at_mgmt_dout),
+        .ext_addr    (at_mgmt_address),
+        .ext_rd      (at_mgmt_read),
+        .ext_wr      (at_mgmt_write),
+        .ext_midi    (),
+        .ext_req     (at_mgmt_request),
+        .ext_hotswap (2'b00)
+    );
 
     wire [31:0] joystick_0;
     wire [31:0] joystick_1;
@@ -62,7 +89,10 @@ module emu_at
     wire [15:0]  hps_status_menumask;
     wire         at_debug_enable = hps_status[71];
     wire [1:0]   at_debug_page = hps_status[73:72];
-    wire         at_debug_boot_view = hps_status[79];
+    wire         at_debug_ram_view = hps_status[82];
+    wire         at_debug_fault_view = hps_status[81] && !at_debug_ram_view;
+    wire         at_debug_boot_view = hps_status[79] && !at_debug_fault_view && !at_debug_ram_view;
+    wire         at_debug_raw_view = at_debug_boot_view || at_debug_fault_view || at_debug_ram_view;
     wire [10:0]  ps2_key;
     wire          ps2_kbd_clk_out;
     wire          ps2_kbd_data_out;
@@ -253,6 +283,9 @@ module emu_at
     wire [23:0] at_debug_cs_base;
     wire [15:0] at_debug_ip;
     wire [15:0] at_debug_flags;
+    wire at_debug_instruction_retired;
+    wire [15:0] at_debug_instruction_ip;
+    wire [95:0] at_debug_segment_bases;
     wire [127:0] at_debug_gpr;
     wire [63:0] at_debug_segment_selectors;
     wire        at_debug_fetch_blocked;
@@ -421,17 +454,16 @@ module emu_at
     );
 
     logic counter_clock;
+    spk286_at_pit_clock u_pit_clock(.clk(CLK_50M), .reset(RESET), .counter_clock(counter_clock));
     logic periodic_tick;
     logic second_tick;
     logic [25:0] tick_counter;
     always_ff @(posedge CLK_50M or posedge RESET) begin
         if (RESET) begin
-            counter_clock <= 1'b0;
             periodic_tick <= 1'b0;
             second_tick   <= 1'b0;
             tick_counter  <= 26'd0;
         end else begin
-            counter_clock <= ~counter_clock;
             periodic_tick <= (tick_counter[11:0] == 12'h000);
             second_tick   <= (tick_counter == 26'd49_999_999);
             if (tick_counter == 26'd49_999_999)
@@ -443,13 +475,12 @@ module emu_at
 
     wire keyboard_byte_valid;
     wire [7:0] keyboard_byte = ps2_key[7:0];
-    logic ps2_key_toggle_q;
-    always_ff @(posedge CLK_50M or posedge RESET) begin
-        if (RESET)
-            ps2_key_toggle_q <= 1'b0;
-        else
-            ps2_key_toggle_q <= ps2_key[10];
-    end
+    logic ps2_key_toggle_q = 1'b0;
+    // hps_io keeps its event toggle across a core reset. Track that level on
+    // every clock, including reset, so an odd previous event is not replayed
+    // as a new keyboard byte when the AT is released.
+    always_ff @(posedge CLK_50M)
+        ps2_key_toggle_q <= ps2_key[10];
     assign keyboard_byte_valid = ps2_key[10] ^ ps2_key_toggle_q;
 
     // Keep the AT machine in reset until the private video PLL is usable as
@@ -532,6 +563,9 @@ module emu_at
     end
     wire cpu_fault;
     wire machine_protocol_error;
+    wire [15:0] at_machine_fault_sources;
+    wire [127:0] at_fault_words;
+    wire at_fault_captured;
 
     // Raw EGA timing and colour signals stay in the raster clock domain until
     // they enter the established 57.272 MHz MiSTer output pipeline below.
@@ -570,6 +604,14 @@ module emu_at
         .parity_event           (1'b0),
         .channel_check_event    (1'b0),
         .external_nmi_event     (1'b0),
+        .mgmt_address           (at_mgmt_address),
+        .mgmt_writedata         (at_mgmt_dout),
+        .mgmt_write             (at_mgmt_write),
+        .mgmt_read              (at_mgmt_read),
+        .mgmt_readdata          (at_mgmt_din),
+        .floppy_write_protect   (hps_status[20:19]),
+        .floppy_present         (at_floppy_present),
+        .floppy_request         (at_floppy_request),
         .cpu_address            (at_cpu_address),
         .cpu_data_out           (at_cpu_data_out),
         .cpu_data_in            (at_cpu_data_in),
@@ -595,6 +637,9 @@ module emu_at
         .debug_cs_base          (at_debug_cs_base),
         .debug_ip               (at_debug_ip),
         .debug_flags            (at_debug_flags),
+        .debug_instruction_retired(at_debug_instruction_retired),
+        .debug_instruction_ip(at_debug_instruction_ip),
+        .debug_segment_bases(at_debug_segment_bases),
         .debug_gpr              (at_debug_gpr),
         .debug_segment_selectors(at_debug_segment_selectors),
         .debug_fetch_blocked    (at_debug_fetch_blocked),
@@ -660,6 +705,7 @@ module emu_at
         .refresh_memory_accept  (refresh_memory_accept),
         .refresh_memory_ready   (refresh_memory_ready),
         .cpu_fault              (cpu_fault),
+        .debug_fault_sources    (at_machine_fault_sources),
         .cpu_reset_request      (at_cpu_reset_request),
         .protocol_error         (machine_protocol_error),
         .video_red              (at_video_red_raw),
@@ -807,6 +853,49 @@ module emu_at
         .capture_pending        (at_boot_trace_pending)
     );
 
+    wire [127:0] at_ram_trace_words;
+    wire at_ram_trace_captured, at_ram_trace_armed;
+    wire [15:0] at_ram_trace_comparisons;
+    spk286_at_ram_trace u_at_ram_trace (
+        .clk(CLK_50M), .reset(at_boot_reset),
+        .cpu_reset(at_machine_reset | at_cpu_reset_request),
+        .retired(at_debug_instruction_retired),
+        .instruction_ip(at_debug_instruction_ip),
+        .cpu_cs(at_debug_cs),
+        .cpu_cs_base(at_debug_cs_base), .cpu_flags(at_debug_flags),
+        .cpu_opcode(at_debug_opcode), .cpu_gpr(at_debug_gpr),
+        .cpu_segments(at_debug_segment_selectors),
+        .cpu_segment_bases(at_debug_segment_bases),
+        .cpu_valid(at_cpu_bus_valid), .cpu_ready(at_cpu_ready),
+        .cpu_write(at_cpu_bus_write), .cpu_bhe_n(at_cpu_bus_bhe_n),
+        .cpu_status(at_cpu_bus_status), .cpu_address(at_cpu_address),
+        .cpu_data_in(at_cpu_data_in), .backend_accept(backend_accept),
+        .backend_ready(backend_ready), .backend_read_valid(backend_read_data_valid),
+        .backend_code(backend_code_fetch), .backend_write(backend_write),
+        .backend_owner(backend_owner), .backend_be(backend_byte_enable),
+        .backend_address(backend_address), .backend_data_in(backend_read_data),
+        .backend_data_out(backend_data_out), .kf_address(at_trace_kf_address),
+        .kf_data(at_trace_kf_data), .kf_read_request(at_trace_kf_read_request),
+        .kf_read_flag(at_trace_kf_read_flag),
+        .sdram_read_command(!sdram_cs && sdram_ras && !sdram_cas && sdram_we),
+        .owner_state(at_trace_owner_state), .sdram_dqm({sdram_udqm, sdram_ldqm}),
+        .select_page(hps_status[84:83]), .selected_words(at_ram_trace_words),
+        .captured(at_ram_trace_captured), .armed(at_ram_trace_armed),
+        .comparisons(at_ram_trace_comparisons)
+    );
+
+    spk286_at_fault_trace u_at_fault_trace (
+        .clk(CLK_50M), .reset(at_boot_reset),
+        .sources({loader_protocol_error, sdram_owner_protocol_error,
+                  memory_port_protocol_error, at_machine_fault_sources}),
+        .cpu_cs(at_debug_cs), .cpu_ip(at_debug_ip),
+        .cpu_address(at_cpu_address), .cpu_opcode(at_debug_opcode),
+        .bus_flags({at_machine_reset | at_cpu_reset_request, at_cpu_halted,
+            at_cpu_bus_valid, at_cpu_ready, at_debug_io, at_cpu_bus_write,
+            at_debug_code, at_cpu_bus_status, at_cpu_address[0], at_cpu_bus_bhe_n}),
+        .captured(at_fault_captured), .words(at_fault_words)
+    );
+
     // The AT profile uses the same four-page diagnostic overlay and the same
     // status bits as the XT profile.  Its XT-labelled bus inputs are fed by
     // the normalized AT transaction so the existing snapshot/CDC logic is
@@ -829,8 +918,10 @@ module emu_at
         .rgb_in                  ({at_video_r_out_q,
                                    at_video_g_out_q,
                                    at_video_b_out_q}),
-        .page                    (at_debug_boot_view ? 2'd3 : at_debug_page),
+        .page                    (at_debug_raw_view ? 2'd3 : at_debug_page),
         .boot_trace_view         (at_debug_boot_view),
+        .fault_trace_view        (at_debug_fault_view),
+        .ram_trace_view          (at_debug_ram_view),
         .cpu_reset               (at_machine_reset | at_cpu_reset_request),
         .cpu_halted              (at_cpu_halted),
         .cpu_shutdown            (at_cpu_shutdown),
@@ -884,12 +975,12 @@ module emu_at
         .hold_request            (at_debug_hold_request),
         .biu_detail              (at_debug_biu_detail),
         .last_post               (at_debug_last_post),
-        .cpu_cycle_count         (at_debug_boot_view ? {10'd0, at_boot_trace_count} : at_debug_cpu_cycle_count),
-        .xt_cycle_count          (at_debug_boot_view ? {7'd0, at_boot_trace_pending, at_boot_trace_full, at_boot_trace_valid, hps_status[80], hps_status[78:74]} : at_debug_at_cycle_count),
-        .trace0                  (at_debug_boot_view ? at_boot_trace_words[31:0] : at_debug_trace0),
-        .trace1                  (at_debug_boot_view ? at_boot_trace_words[63:32] : at_debug_trace1),
-        .trace2                  (at_debug_boot_view ? at_boot_trace_words[95:64] : at_debug_trace2),
-        .trace3                  (at_debug_boot_view ? at_boot_trace_words[127:96] : at_debug_trace3),
+        .cpu_cycle_count         (at_debug_ram_view ? at_ram_trace_comparisons : at_debug_boot_view ? {10'd0, at_boot_trace_count} : at_debug_cpu_cycle_count),
+        .xt_cycle_count          (at_debug_ram_view ? {12'd0, at_ram_trace_armed, at_ram_trace_captured, hps_status[84:83]} : at_debug_boot_view ? {7'd0, at_boot_trace_pending, at_boot_trace_full, at_boot_trace_valid, hps_status[80], hps_status[78:74]} : at_debug_at_cycle_count),
+        .trace0                  (at_debug_ram_view ? at_ram_trace_words[31:0] : at_debug_fault_view ? at_fault_words[31:0] : at_debug_boot_view ? at_boot_trace_words[31:0] : at_debug_trace0),
+        .trace1                  (at_debug_ram_view ? at_ram_trace_words[63:32] : at_debug_fault_view ? at_fault_words[63:32] : at_debug_boot_view ? at_boot_trace_words[63:32] : at_debug_trace1),
+        .trace2                  (at_debug_ram_view ? at_ram_trace_words[95:64] : at_debug_fault_view ? at_fault_words[95:64] : at_debug_boot_view ? at_boot_trace_words[95:64] : at_debug_trace2),
+        .trace3                  (at_debug_ram_view ? at_ram_trace_words[127:96] : at_debug_fault_view ? at_fault_words[127:96] : at_debug_boot_view ? at_boot_trace_words[127:96] : at_debug_trace3),
         .keyboard_keycode        (at_debug_keyboard_keycode),
         .keyboard_irq            (at_debug_keyboard_irq),
         .keyboard_port_b         (at_debug_keyboard_port_b),
