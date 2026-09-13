@@ -27,6 +27,10 @@ module emu_at
         "S1,IMGIMAVFD,Floppy B:;",
         "OJK,Write Protect,None,A:,B:,A: & B:;",
         "-;",
+        "S2,VHD,IDE 0-0;",
+        "S3,VHD,IDE 0-1;",
+        "OLM,2nd SD card,Disable,IDE 0-0,IDE 0-1;",
+        "-;",
         "P1,System & BIOS;",
         "P1-;",
         "P1O7,Boot Splash Screen,Yes,No;",
@@ -60,11 +64,14 @@ module emu_at
     wire        at_mgmt_write;
     wire [1:0]  at_floppy_present;
     wire [1:0]  at_floppy_request;
-    wire [7:0]  at_mgmt_request = {at_floppy_request, 6'b000000};
+    wire [2:0]  at_ide_request;
+    wire [7:0]  at_mgmt_request = {at_floppy_request, 3'b000,
+                                   at_ide_request};
 
-    // Use the same MiSTer management transport as the XT profile and
-    // ao486/z486. Requests 7:6 are floppy A/B. RTC/CMOS updates are
-    // host-pushed writes in the F4xx window and therefore need no request bit.
+    // Use the same MiSTer management transport and request bit layout as the
+    // XT profile. Requests 7:6 are floppy A/B and 2:0 belong to XT-IDE.
+    // RTC/CMOS updates are host-pushed writes in the F4xx window and therefore
+    // need no request bit.
     hps_ext hps_ext_at (
         .clk_sys     (CLK_50M),
         .EXT_BUS     (EXT_BUS),
@@ -325,6 +332,8 @@ module emu_at
     wire        at_debug_ready;
     wire        at_debug_hold_request;
     wire        at_debug_bridge_idle;
+    wire        at_speaker_active;
+    wire        at_speaker_level;
 
     wire        dma_memory_valid;
     wire        dma_memory_write;
@@ -474,14 +483,10 @@ module emu_at
     end
 
     wire keyboard_byte_valid;
-    wire [7:0] keyboard_byte = ps2_key[7:0];
-    logic ps2_key_toggle_q = 1'b0;
-    // hps_io keeps its event toggle across a core reset. Track that level on
-    // every clock, including reset, so an odd previous event is not replayed
-    // as a new keyboard byte when the AT is released.
-    always_ff @(posedge CLK_50M)
-        ps2_key_toggle_q <= ps2_key[10];
-    assign keyboard_byte_valid = ps2_key[10] ^ ps2_key_toggle_q;
+    wire [7:0] keyboard_byte;
+    wire keyboard_byte_ready;
+    wire keyboard_translate_set1;
+    wire keyboard_event_overflow;
 
     // Keep the AT machine in reset until the private video PLL is usable as
     // well as until the system BIOS has arrived.  The BIOS loader and SDRAM
@@ -508,6 +513,28 @@ module emu_at
     // Reuse the XT reset controls without clearing the loaded ROM flags.
     wire at_boot_reset = RESET | hps_status[0] | hps_buttons[1] |
                          !main_rom_loaded | !at_video_pll_locked;
+
+    spk286_at_keyboard u_at_keyboard (
+        .clk                    (CLK_50M),
+        .reset                  (at_boot_reset),
+        .ps2_key                (ps2_key),
+        .translate_set1         (keyboard_translate_set1),
+        .keyboard_byte_ready    (keyboard_byte_ready),
+        .keyboard_byte_valid    (keyboard_byte_valid),
+        .keyboard_byte          (keyboard_byte),
+        .overflow               (keyboard_event_overflow)
+    );
+
+    // Keep the XT-compatible second-SD routing selection stable until the
+    // machine is reset, matching the XT profile's use_mmc latch.  Bits 22:21
+    // are free in the AT profile and are reserved for this shared OSD field.
+    logic [1:0] at_use_mmc_q;
+    always_ff @(posedge CLK_50M or posedge RESET) begin
+        if (RESET)
+            at_use_mmc_q <= 2'b00;
+        else if (at_boot_reset)
+            at_use_mmc_q <= hps_status[22:21];
+    end
 
     // Keep the AT splash lifetime aligned with the XT profile.  Previously
     // this was wired directly to hps_status[7], which made the default
@@ -599,6 +626,8 @@ module emu_at
         .refresh_enable         (1'b1),
         .keyboard_byte_valid    (keyboard_byte_valid),
         .keyboard_byte          (keyboard_byte),
+        .keyboard_byte_ready    (keyboard_byte_ready),
+        .keyboard_translate_set1(keyboard_translate_set1),
         .periodic_tick          (periodic_tick),
         .second_tick             (second_tick),
         .parity_event           (1'b0),
@@ -609,9 +638,11 @@ module emu_at
         .mgmt_write             (at_mgmt_write),
         .mgmt_read              (at_mgmt_read),
         .mgmt_readdata          (at_mgmt_din),
+        .use_mmc                (at_use_mmc_q),
         .floppy_write_protect   (hps_status[20:19]),
         .floppy_present         (at_floppy_present),
         .floppy_request         (at_floppy_request),
+        .ide_request            (at_ide_request),
         .cpu_address            (at_cpu_address),
         .cpu_data_out           (at_cpu_data_out),
         .cpu_data_in            (at_cpu_data_in),
@@ -707,6 +738,8 @@ module emu_at
         .cpu_fault              (cpu_fault),
         .debug_fault_sources    (at_machine_fault_sources),
         .cpu_reset_request      (at_cpu_reset_request),
+        .speaker_active         (at_speaker_active),
+        .speaker_level          (at_speaker_level),
         .protocol_error         (machine_protocol_error),
         .video_red              (at_video_red_raw),
         .video_green            (at_video_green_raw),
@@ -971,7 +1004,7 @@ module emu_at
         .xt_cycle_active         (at_debug_cycle_active),
         .xt_ready                (at_debug_ready),
         .bridge_idle             (at_debug_bridge_idle),
-        .bridge_error            (machine_protocol_error),
+        .bridge_error            (machine_protocol_error | keyboard_event_overflow),
         .hold_request            (at_debug_hold_request),
         .biu_detail              (at_debug_biu_detail),
         .last_post               (at_debug_last_post),
@@ -1000,7 +1033,7 @@ module emu_at
             at_use_debug_q <= at_debug_enable;
     end
 
-    wire at_video_fault = cpu_fault | machine_protocol_error |
+    wire at_video_fault = cpu_fault | machine_protocol_error | keyboard_event_overflow |
                           memory_port_protocol_error |
                           sdram_owner_protocol_error |
                           loader_protocol_error;
@@ -1027,16 +1060,21 @@ module emu_at
     assign HDMI_FREEZE  = 1'b0;
     assign HDMI_BLACKOUT = 1'b0;
     assign HDMI_BOB_DEINT = 1'b0;
-    assign LED_USER     = cpu_fault | machine_protocol_error |
+    assign LED_USER     = cpu_fault | machine_protocol_error | keyboard_event_overflow |
                           memory_port_protocol_error |
                           sdram_owner_protocol_error |
                           loader_protocol_error;
     assign LED_POWER    = 2'b00;
     assign LED_DISK     = {1'b0, main_rom_loaded};
     assign BUTTONS      = hps_buttons;
-    assign AUDIO_L      = 16'h0000;
-    assign AUDIO_R      = 16'h0000;
-    assign AUDIO_S      = 1'b0;
+    // Minimal PC speaker PCM.  The AT machine supplies a square-wave logic
+    // level from PIT channel 2; present it as a centered signed sample and
+    // leave the output at digital silence while the speaker is gated off.
+    assign AUDIO_L      = !at_speaker_active ? 16'h0000 :
+                          at_speaker_level ? 16'h4000 : 16'hC000;
+    assign AUDIO_R      = !at_speaker_active ? 16'h0000 :
+                          at_speaker_level ? 16'h4000 : 16'hC000;
+    assign AUDIO_S      = 1'b1;
     assign AUDIO_MIX    = 2'b00;
     assign ADC_BUS      = 4'hz;
     assign SD_SCK       = 1'bz;
