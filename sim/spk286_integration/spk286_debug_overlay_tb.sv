@@ -15,14 +15,6 @@ module spk286_debug_overlay_tb;
     logic VB = 1'b0;
     logic [23:0] rgb_in = 24'h2569ad;
     logic [1:0] page = 2'd0;
-    logic boot_trace_view = 1'b0;
-    logic fault_trace_view = 1'b0;
-    logic ram_trace_view = 1'b0;
-`ifdef TEST_AT_BOOT_TRACE
-    localparam bit TEST_AT_MODE = 1'b1;
-`else
-    localparam bit TEST_AT_MODE = 1'b0;
-`endif
 
     logic cpu_reset = 1'b1;
     logic cpu_halted = 1'b0;
@@ -98,10 +90,10 @@ module spk286_debug_overlay_tb;
     spk286_debug_overlay #(
         .COLW(8),
         .BLANK_WATCHDOG_WIDTH(4),
-        .AT_MODE(TEST_AT_MODE)
+        .AT_MODE(1'b1)
     ) dut (
         .rst, .src_rst, .src_clk, .clk, .pxl_cen, .HS, .VS, .HB, .VB,
-        .rgb_in, .page, .boot_trace_view, .fault_trace_view, .ram_trace_view,
+        .rgb_in, .page,
         .cpu_reset, .cpu_halted, .cpu_shutdown, .cpu_control_error,
         .cpu_unsupported_opcode, .cpu_microcode_fault,
         .cpu_operand_blocked, .cpu_event_completed, .cpu_event_vector,
@@ -287,74 +279,6 @@ module spk286_debug_overlay_tb;
         expect_character(2'd3, 2, 15, "A");
         expect_character(2'd3, 2, 19, "6");
 
-        // AT raw records preserve every nibble, including the old R/W bit.
-        // The same input is explicitly ignored by the XT parameter branch.
-        boot_trace_view = 1'b1;
-        trace0 = 32'h89ABCDEF;
-        trace1 = 32'h01234567;
-        cpu_cycle_count = 16'h0020;
-        xt_cycle_count = 16'h00EF;
-        request_snapshot(2'd3);
-        if (TEST_AT_MODE) begin
-            if (!dut.d_boot_trace_view) fail("AT raw view CDC bit");
-            expect_character(2'd3, 0, 3, "B");
-            expect_character(2'd3, 2, 0, "T");
-            expect_character(2'd3, 2, 1, "0");
-            expect_character(2'd3, 2, 3, "8");
-            expect_character(2'd3, 2, 6, "B");
-            expect_character(2'd3, 2, 10, "F");
-            expect_character(2'd3, 3, 3, "0");
-            expect_character(2'd3, 3, 10, "7");
-            expect_character(2'd3, 7, 4, "0");
-            expect_character(2'd3, 7, 5, "F");
-            expect_character(2'd3, 7, 12, "1");
-            expect_character(2'd3, 7, 20, "1");
-            expect_character(2'd3, 8, 6, "2");
-            expect_character(2'd3, 8, 7, "0");
-            expect_character(2'd3, 8, 14, "1");
-            expect_character(2'd3, 8, 21, "0");
-            xt_cycle_count = 16'h0140;
-            cpu_cycle_count = 16'h0000;
-            request_snapshot(2'd3);
-            expect_character(2'd3, 8, 6, "0");
-            expect_character(2'd3, 8, 14, "0");
-            expect_character(2'd3, 8, 21, "1");
-            $display("AT_BOOT_TRACE_OVERLAY_PASS raw_hex_and_pending_header");
-        end else if (dut.d_boot_trace_view !== 1'b0)
-            fail("XT must ignore the AT raw trace input");
-        fault_trace_view = 1'b1;
-        repeat (3) begin
-            VB = 1'b0; repeat (8) @(posedge clk);
-            VB = 1'b1; repeat (24) @(posedge clk);
-        end
-        if (TEST_AT_MODE && !dut.d_fault_trace_view) fail("AT fault view CDC bit");
-        if (TEST_AT_MODE) begin
-            expect_character(2'd3,0,3,"F");
-            expect_character(2'd3,2,3,"8");
-            expect_character(2'd3,2,10,"F");
-            expect_character(2'd3,7,0,"T");
-            expect_character(2'd3,8,0,"T");
-            expect_character(2'd3,10,0,"H");
-            $display("AT_FAULT_TRACE_OVERLAY_PASS");
-        end
-        if (!TEST_AT_MODE && dut.d_fault_trace_view !== 1'b0) fail("XT fault view isolation");
-        ram_trace_view = 1'b1;
-        xt_cycle_count = 16'h000F;
-        cpu_cycle_count = 16'h0123;
-        request_snapshot(2'd3);
-        if (TEST_AT_MODE) begin
-            if (!dut.d_ram_trace_view) fail("RAM trace CDC bit");
-            expect_character(2'd3,0,3,"L");
-            expect_character(2'd3,7,5,"3");
-            expect_character(2'd3,7,13,"1");
-            expect_character(2'd3,7,21,"1");
-            expect_character(2'd3,8,15,"3");
-            expect_character(2'd3,2,3,"8");
-            $display("AT_RAM_TRACE_OVERLAY_PASS");
-        end else if (dut.d_ram_trace_view !== 1'b0) fail("XT RAM trace isolation");
-        ram_trace_view = 1'b0;
-        fault_trace_view = 1'b0;
-        boot_trace_view = 1'b0;
         request_snapshot(2'd0);
 
         // Make one glyph row unambiguous and verify the two-stage font/RGB

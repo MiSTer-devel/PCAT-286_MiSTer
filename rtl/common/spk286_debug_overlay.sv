@@ -24,9 +24,6 @@ module spk286_debug_overlay #(
     input  logic                  VB,
     input  logic [COLW*3-1:0]     rgb_in,
     input  logic [1:0]            page,
-    input  logic                  boot_trace_view,
-    input  logic                  fault_trace_view,
-    input  logic                  ram_trace_view,
 
     input  logic                  cpu_reset,
     input  logic                  cpu_halted,
@@ -129,12 +126,11 @@ module spk286_debug_overlay #(
         keyboard_keycode, keyboard_irq, keyboard_port_b, keyboard_pic_int,
         dma_request, dma_acknowledge_n, biu_detail
     };
-    wire [671:0] complete_state_async = {
-        (AT_MODE && ram_trace_view), (AT_MODE && fault_trace_view), (AT_MODE && boot_trace_view),
+    wire [668:0] complete_state_async = {
         cpu_state_async, bus_state_async, trace0, trace1, trace2, trace3
     };
-    logic [679:0] source_snapshot = '0;
-    logic [679:0] video_snapshot = '0;
+    logic [676:0] source_snapshot = '0;
+    logic [676:0] video_snapshot = '0;
     logic [7:0] snapshot_sequence = 8'd0;
     logic snapshot_request = 1'b0;
     logic snapshot_acknowledge = 1'b0;
@@ -203,12 +199,8 @@ module spk286_debug_overlay #(
     wire [190:0] bus_state_snapshot;
     wire [127:0] trace_state_snapshot;
     wire [7:0] d_snapshot_sequence;
-    wire d_boot_trace_view;
-    wire d_fault_trace_view;
-    wire d_ram_trace_view;
-    wire d_raw_trace_view = d_boot_trace_view || d_fault_trace_view || d_ram_trace_view;
     assign {
-        d_snapshot_sequence, d_ram_trace_view, d_fault_trace_view, d_boot_trace_view,
+        d_snapshot_sequence,
         cpu_state_snapshot, bus_state_snapshot,
         trace_state_snapshot
     } = video_snapshot;
@@ -369,23 +361,6 @@ module spk286_debug_overlay #(
                 trace_at = hex_digit(trace[shift +: 4]);
             end else if (index == 19)
                 trace_at = hex_digit({1'b0, trace[3:1]});
-        end
-    endfunction
-
-    function automatic [6:0] raw_trace_at(
-        input logic [31:0] trace,
-        input logic [6:0] number,
-        input logic [5:0] index
-    );
-        integer shift;
-        begin
-            raw_trace_at = text_at("T0:00000000", 11, index);
-            if (index == 1)
-                raw_trace_at = number;
-            else if ((index >= 3) && (index <= 10)) begin
-                shift = (10 - index) * 4;
-                raw_trace_at = hex_digit(trace[shift +: 4]);
-            end
         end
     endfunction
 
@@ -773,69 +748,32 @@ module spk286_debug_overlay #(
             default: begin
                 case (row)
                     4'd0: begin
-                        if (d_ram_trace_view)
-                            character = text_at("AT LANDMARK RAM TRACE", 21, col);
-                        else if (d_fault_trace_view)
-                            character = text_at("AT FIRST FAULT TRACE", 20, col);
-                        else if (d_boot_trace_view)
-                            character = text_at("AT BOOT FETCH TRACE", 19, col);
-                        else if (AT_MODE)
+                        if (AT_MODE)
                             character = text_at("AT TRACE NEWEST FIRST", 21, col);
                         else
                             character = text_at("XT TRACE NEWEST FIRST", 21, col);
                     end
-                    4'd2: character = d_raw_trace_view ? raw_trace_at(d_trace0, 7'd48, col) : trace_at(d_trace0, 7'd48, col);
-                    4'd3: character = d_raw_trace_view ? raw_trace_at(d_trace1, 7'd49, col) : trace_at(d_trace1, 7'd49, col);
-                    4'd4: character = d_raw_trace_view ? raw_trace_at(d_trace2, 7'd50, col) : trace_at(d_trace2, 7'd50, col);
-                    4'd5: character = d_raw_trace_view ? raw_trace_at(d_trace3, 7'd51, col) : trace_at(d_trace3, 7'd51, col);
+                    4'd2: character = trace_at(d_trace0, 7'd48, col);
+                    4'd3: character = trace_at(d_trace1, 7'd49, col);
+                    4'd4: character = trace_at(d_trace2, 7'd50, col);
+                    4'd5: character = trace_at(d_trace3, 7'd51, col);
                     4'd7: begin
-                        if (d_ram_trace_view) begin
-                            character = text_at("PAGE:0 VALID:0 ARMED:0", 22, col);
-                            if (col == 5) character = hex_digit({2'd0, d_xt_cycle_count[1:0]});
-                            else if (col == 13) character = bit_digit(d_xt_cycle_count[2]);
-                            else if (col == 21) character = bit_digit(d_xt_cycle_count[3]);
-                        end else if (d_fault_trace_view)
-                            character = text_at("T0:FIRST MASK T1:CSIP", 21, col);
-                        else if (d_boot_trace_view) begin
-                            character = text_at("IDX:00 VIEW:0 VALID:0", 21, col);
-                            if (col == 4) character = hex_digit({3'd0, d_xt_cycle_count[4]});
-                            else if (col == 5) character = hex_digit(d_xt_cycle_count[3:0]);
-                            else if (col == 12) character = bit_digit(d_xt_cycle_count[5]);
-                            else if (col == 20) character = bit_digit(d_xt_cycle_count[6]);
-                        end else character = text_at("S0 INTA 1 IOR 2 IOW", 19, col);
+                        character = text_at("S0 INTA 1 IOR 2 IOW", 19, col);
                     end
                     4'd8: begin
-                        if (d_ram_trace_view) begin
-                            character = text_at("COMPARISONS:0000", 16, col);
-                            if (col >= 12 && col <= 15) begin
-                                nibble_shift = (15-col)*4;
-                                character = hex_digit(d_cpu_cycle_count[nibble_shift +: 4]);
-                            end
-                        end else if (d_fault_trace_view)
-                            character = text_at("T2:OP+ADDR T3:FLAGS+LIVE", 24, col);
-                        else if (d_boot_trace_view) begin
-                            character = text_at("COUNT:00 FULL:0 WAIT:0", 22, col);
-                            if ((col >= 6) && (col <= 7)) begin
-                                nibble_shift = (7-col) * 4;
-                                character = hex_digit(d_cpu_cycle_count[nibble_shift +: 4]);
-                            end else if (col == 14) character = bit_digit(d_xt_cycle_count[7]);
-                            else if (col == 21) character = bit_digit(d_xt_cycle_count[8]);
-                        end else character = text_at("S3 HALT 4 CODE 5 MEMR 6 MEMW", 28, col);
+                        character = text_at("S3 HALT 4 CODE 5 MEMR 6 MEMW", 28, col);
                     end
                     4'd10: begin
-                        character = (d_fault_trace_view || d_ram_trace_view) ?
-                                    text_at("HELD UNTIL CORE RESET", 21, col) : d_boot_trace_view ?
-                                    text_at("READY=0 MEANS PENDING", 21, col) :
-                                    text_at("POST:00 XT#:0000", 16, col);
-                        if (!d_raw_trace_view && (col >= 5) && (col <= 6)) begin
+                        character = text_at("POST:00 AT#:0000", 16, col);
+                        if ((col >= 5) && (col <= 6)) begin
                             nibble_shift = (6 - col) * 4;
                             character = hex_digit(d_last_post[nibble_shift +: 4]);
-                        end else if (!d_raw_trace_view && (col >= 12) && (col <= 15)) begin
+                        end else if ((col >= 12) && (col <= 15)) begin
                             nibble_shift = (15 - col) * 4;
                             character = hex_digit(d_xt_cycle_count[nibble_shift +: 4]);
                         end
                     end
-                    4'd11: character = d_raw_trace_view ? text_at("RAW 32-BIT WORDS", 16, col) : text_at("R/W A:ADDR D:DATA S:STATE", 25, col);
+                    4'd11: character = text_at("R/W A:ADDR D:DATA S:STATE", 25, col);
                     4'd12: begin
                         character = text_at("SNAP:00", 7, col);
                         if ((col >= 5) && (col <= 6)) begin
