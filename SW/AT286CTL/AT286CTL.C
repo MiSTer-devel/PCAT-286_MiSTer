@@ -1,11 +1,11 @@
-/* XTEGACTL - per-program hardware control for the PCXT-EGA core.
+/* AT286CTL - per-program hardware control for the PCAT-286 core.
  *
  * Sets the machine up the way a program wants it before the program runs,
  * without walking the OSD.  Meant for a batch file next to a game:
  *
- *     XTEGACTL 4.77 adlib joy1=digital
+ *     AT286CTL 4.77 adlib joy1=digital
  *     GAME.EXE
- *     XTEGACTL reset
+ *     AT286CTL reset
  *
  * Everything here takes effect immediately.  Options the core only samples
  * while it is in reset - CPU type, the EGA monitor switches, the 2nd SD card
@@ -15,7 +15,7 @@
  * Anything not named on the command line is left to the OSD, and the tool
  * rewrites the whole register file on every run, so a setting from an earlier
  * program never survives into the next one.  VGA 13h+ is the exception: it is
- * owned by VGATSR, so ordinary XTEGACTL invocations preserve its state.
+ * owned by VGATSR, so ordinary AT286CTL invocations preserve its state.
  * "reset" also disables that extension.
  *
  * Build with Open Watcom:  wmake (wmake -a on Linux/WSL)
@@ -28,7 +28,7 @@
 
 #define VERSION         "1.3"
 
-/* Port block.  See rtl/KFPC-XT/HDL/xtegactl.sv for why it lives at 8980h and
+/* Port block.  See rtl/spk286_integration/at286ctl.sv for why it lives at 8980h and
    not next to the retired 8888h port. */
 #define P_SIG           0x8980
 #define P_CPU           0x8981
@@ -160,7 +160,7 @@ static void put(unsigned char *reg, int shift, int width, unsigned char value)
 
 static void usage(char *argv0)
 {
-    printf("XTEGACTL %s - per-program hardware control for PCXT-EGA\n\n", VERSION);
+    printf("AT286CTL %s - per-program hardware control for PCAT-286 core\n\n", VERSION);
     printf("USAGE: %s [options]\n\n", argv0);
     printf("CPU        4.77  7.16  9.54  max\n");
     printf("           fake286  nofake286\n");
@@ -206,7 +206,7 @@ static int joystick(char *prefix, unsigned char *reg, int shift)
     else if (strcmpi(v, "off") == 0)     put(reg, shift, 2, 3);
     else
     {
-        printf("XTEGACTL: %s%s is not analog, digital or off\n", prefix, v);
+        printf("AT286CTL: %s%s is not analog, digital or off\n", prefix, v);
         return -1;
     }
     return 0;
@@ -232,7 +232,7 @@ static int number(char *prefix, int max, unsigned char *value, int *present)
     return 0;
 
 bad:
-    printf("XTEGACTL: %s must be a value from 0 to %d\n", prefix, max);
+    printf("AT286CTL: %s must be a value from 0 to %d\n", prefix, max);
     return -1;
 }
 
@@ -255,7 +255,7 @@ static int sync_width(char *prefix, unsigned char *reg, int shift)
     return 0;
 
 bad:
-    printf("XTEGACTL: %s must be auto or a value from 0 to 7\n", prefix);
+    printf("AT286CTL: %s must be auto or a value from 0 to 7\n", prefix);
     return -1;
 }
 
@@ -270,7 +270,7 @@ static int soundblaster_irq(unsigned char *reg)
     else if (strcmpi(v, "auto") == 0) put(reg, 4, 2, 0);
     else
     {
-        printf("XTEGACTL: sbirq must be auto, 5 or 7\n");
+        printf("AT286CTL: sbirq must be auto, 5 or 7\n");
         return -1;
     }
     return 0;
@@ -316,7 +316,7 @@ static void show_legacy(void)
     s = (unsigned char)(r_cpu & 0x07);
     if (s > 4) s = 0;
 
-    printf("XTEGACTL %s - current overrides\n\n", VERSION);
+    printf("AT286CTL %s - current overrides\n\n", VERSION);
     printf("  CPU speed      %s\n", speed[s]);
     printf("  Fake 286 FLAGS %s\n", onoff[(r_cpu >> 3) & 3]);
     printf("  OPL2           %s\n", opl[r_exp & 3]);
@@ -399,7 +399,7 @@ static void show(void)
         return;
     }
 
-    printf("XTEGACTL %s - current configuration\n\n", VERSION);
+    printf("AT286CTL %s - current configuration\n\n", VERSION);
 
     printf("  CPU speed      %s%s\n", speed[e_cpu & 3], status_suffix(0));
     printf("  Fake 286 FLAGS %s%s\n", onoff[(e_cpu >> 3) & 1], status_suffix(1));
@@ -452,12 +452,12 @@ int main(int argc, char **argv)
 
     /* Refuse to write into the void.  The tool travels in the disk image and
        the RBF is updated separately, so it is entirely normal for someone to
-       run a new XTEGACTL on a core that predates the port block. Without this
+       run a new AT286CTL on a core that predates the port block. Without this
        check that would look exactly like the tool doing nothing at all. */
     if ((unsigned char)inp(P_SIG) != SIGNATURE)
     {
-        printf("XTEGACTL: this core does not have the XTEGACTL port block.\n");
-        printf("          Update the PCXT-EGA RBF and try again.\n");
+        printf("AT286CTL: this core does not have the AT286CTL port block.\n");
+        printf("          Update the PCAT-286 RBF and try again.\n");
         return 2;
     }
 
@@ -539,7 +539,7 @@ int main(int argc, char **argv)
         {
             if (!matched[i])
             {
-                printf("XTEGACTL: unknown option \"%s\"\n", argv[i]);
+                printf("AT286CTL: unknown option \"%s\"\n", argv[i]);
                 return 1;
             }
         }

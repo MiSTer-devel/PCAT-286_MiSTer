@@ -8,10 +8,10 @@
 # -l=com  emit a real .COM. Without it -lr produces an MZ executable, and
 #         naming that .COM does not make it one - DOS would load the header
 #         bytes as code and the program would die on its first instruction.
-all: XTEGACTL.COM
+all: AT286CTL.COM
 
-XTEGACTL.COM: XTEGACTL.C
-	wcl -q -y -0 -s -d0 -mt -l=com -we -wx -k1024 -os XTEGACTL.C -fe=XTEGACTL.COM
+AT286CTL.COM: AT286CTL.C
+	wcl -q -y -0 -s -d0 -mt -l=com -we -wx -k1024 -os AT286CTL.C -fe=AT286CTL.COM
 
 # The host toolchain names the intermediate .obj on DOS/Windows and .o on
 # Linux, so sweep both.

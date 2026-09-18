@@ -109,7 +109,7 @@ $enableRoutineOffset = 0xE359
 $enableRoutine = [byte[]](
     0xB0, 0xB8,       # MOV AL,B8h: unmask IRQ0, IRQ1, IRQ2 and IRQ6
     0xE6, 0x21,       # OUT 21h,AL
-    0xB0, 0xFD,       # MOV AL,FDh: unmask slave IRQ8/IRQ9
+    0xB0, 0xFB,       # MOV AL,FBh: unmask slave IRQ8; keep IRQ9 masked
     0xE6, 0xA1,       # OUT A1h,AL
     0xFB,             # STI
     0xC3              # RET

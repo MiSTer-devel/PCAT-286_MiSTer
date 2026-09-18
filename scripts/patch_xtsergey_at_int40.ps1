@@ -8,7 +8,11 @@ Default input is the previously tested AT-PIC variant. The source ROM and
 all existing service routines are preserved; output is a separate 64KiB ROM.
 #>
 [CmdletBinding()]
-param([string]$InputPath, [string]$OutputPath)
+param(
+    [string]$InputPath,
+    [string]$OutputPath,
+    [string]$ReplaceOutputSha256
+)
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($InputPath)) {
     $InputPath = Join-Path $PSScriptRoot '..\SW\ROMs\test\xtsergey_mod_at_atpic.rom'
@@ -22,7 +26,8 @@ if ($inputFullPath -eq $outputFullPath) { throw 'Input and output must differ.' 
 $hash = (Get-FileHash -LiteralPath $inputFullPath -Algorithm SHA256).Hash
 $known = @(
     'D023FD7B2777845775C78F0A149CA379ABA2A4BFF61D057BD184731691897624',
-    'B2EB742FBE6363473CBB2D824767DB9BA695B5E7A3E732331C115C0679E5DB70'
+    'B2EB742FBE6363473CBB2D824767DB9BA695B5E7A3E732331C115C0679E5DB70',
+    '731B19DD1E19AA1780CBA899A029323EE1B029943CB7DBDB5B50E20A4EBE1B59'
 )
 if ($hash -notin $known) { throw "Unsupported source BIOS SHA256: $hash" }
 $bytes = [IO.File]::ReadAllBytes($inputFullPath)
@@ -59,8 +64,13 @@ for ($i=0; $i -lt 65535; $i++) { $sum=($sum+$bytes[$i]) -band 255 }
 $bytes[65535]=(-$sum) -band 255
 $outputHash=([BitConverter]::ToString(([Security.Cryptography.SHA256]::Create()).ComputeHash($bytes))).Replace('-','')
 if (Test-Path -LiteralPath $outputFullPath) {
-    if ((Get-FileHash -LiteralPath $outputFullPath -Algorithm SHA256).Hash -ne $outputHash) {
-        throw "Refusing to overwrite a different ROM: $outputFullPath"
+    $existingHash = (Get-FileHash -LiteralPath $outputFullPath -Algorithm SHA256).Hash.ToUpperInvariant()
+    if ($existingHash -ne $outputHash) {
+        if ([string]::IsNullOrWhiteSpace($ReplaceOutputSha256) -or
+            $existingHash -ne $ReplaceOutputSha256.ToUpperInvariant()) {
+            throw "Refusing to overwrite a different ROM: $outputFullPath"
+        }
+        [IO.File]::WriteAllBytes($outputFullPath,$bytes)
     }
 } else {
     [IO.File]::WriteAllBytes($outputFullPath,$bytes)

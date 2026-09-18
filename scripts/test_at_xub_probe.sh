@@ -26,13 +26,19 @@ sources+=(
   rtl/spk286_integration/spk286_at_xtide.sv
   rtl/spk286_integration/spk286_at_storage_video.sv
   rtl/spk286_integration/spk286_at_video_adapter.sv
+  rtl/spk286_integration/at286ctl.sv
   rtl/KFPC-XT/HDL/ega_vram_bram_frontend.sv
+  rtl/common/tandy_pcjr_joy.sv
+  rtl/spk286_integration/spk286_at_gameport.sv
+  rtl/spk286_integration/spk286_at_sound.sv
+  rtl/spk286_integration/spk286_at_serial.sv
   rtl/spk286_integration/spk286_at_device_router.sv
   rtl/spk286_integration/spk286_at_machine.sv
   rtl/KFPC-XT/HDL/KF8253/HDL/*.sv rtl/KFPC-XT/HDL/KF8259/HDL/*.sv
   rtl/video/*.v rtl/video/*.sv sim/spk286_integration/spk286_at_xub_probe_tb.sv
 )
 verilator --binary --timing -j 4 -Wno-fatal -DSPK286_P05_PARALLEL_LIMIT_CHECK \
+  -DSPK286_AT_SIM_MODEL \
   -Irtl/KFPC-XT/HDL/KF8253/HDL -Irtl/KFPC-XT/HDL/KF8259/HDL \
   --top-module spk286_at_xub_probe_tb --Mdir "$build_dir/obj" -o xub_probe \
   "${sources[@]}" >"$build_dir/build.log" 2>&1
