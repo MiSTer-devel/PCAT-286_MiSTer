@@ -76,7 +76,7 @@ module spk286_at_xub_probe_tb;
                     cycles,cs,ip,dut.debug_opcode,gpr,dut.debug_segment_selectors,dut.debug_flags);
                 trace_count=trace_count+1;
             end
-            if(cs==16'hec00) begin
+            if(cs==16'hc800) begin
                 saw_xub=1;
                 visits[ip]=visits[ip]+1;
                 if(visits[ip]==1 && (ip==16'h3d7 || ip==16'h498 || ip==16'h505 ||
@@ -220,7 +220,7 @@ module spk286_at_xub_probe_tb;
         for(integer n=0;n<65536;n=n+1) mem['hf0000+n]=rom[n];
         fd=$fopen(xub_path,"rb"); count=$fread(xub,fd); $fclose(fd);
         if(count!=8192) $fatal(1,"Probe currently expects the r631 8KiB AT ROM");
-        for(integer n=0;n<count;n=n+1) mem['hec000+n]=xub[n];
+        for(integer n=0;n<count;n=n+1) mem['hc8000+n]=xub[n];
         fd=$fopen(fixture_path,"rb"); count=$fread(fixture,fd); $fclose(fd);
         for(integer n=0;n<count;n=n+1) mem['hf0000+n]=fixture[n];
         if(mem['hfe198]!=8'h0e || mem['hfe1b0]!=8'hb0)

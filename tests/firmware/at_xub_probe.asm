@@ -55,7 +55,7 @@ org 0
     mov al,ah
     out 0x40,al
     sti
-    call 0xec00:3
+    call 0xc800:3
     int 0x19
 finished:
     mov al,0x99

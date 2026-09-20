@@ -24,6 +24,7 @@ sources+=(
   rtl/spk286_integration/spk286_at_rtc_cmos.sv
   rtl/spk286_integration/spk286_at_fdc.sv
   rtl/spk286_integration/spk286_at_xtide.sv
+  rtl/spk286_integration/spk286_at_ems.sv
   rtl/spk286_integration/spk286_at_storage_video.sv
   rtl/spk286_integration/spk286_at_video_adapter.sv
   rtl/spk286_integration/at286ctl.sv
