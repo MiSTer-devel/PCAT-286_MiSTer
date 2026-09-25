@@ -47,7 +47,8 @@ module spk286_at_xub_probe_tb;
     end
     spk286_at_machine dut (
         .clk(clk),.clk_cpu(clk),.cpu_sample_edge(1'b1),.reset(reset),.cpu_reset(1'b0),.clk_video(clk),
-        .splashscreen(1'b0),.installed_ram_size_osd(3'd0),
+        .splashscreen(1'b0),.ega_monitor_profile(2'b00),
+        .installed_ram_size_osd(3'd0),
         .execute_enable(1'b1),.counter_clock(counter_clock),
         .refresh_enable(1'b0),.keyboard_byte_valid(1'b0),.keyboard_byte(8'd0),
         .periodic_tick(1'b0),.second_tick(1'b0),.parity_event(1'b0),
