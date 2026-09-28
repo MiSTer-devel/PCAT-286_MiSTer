@@ -101,6 +101,7 @@ module ega_splash_timing_tb;
         .ega_dot_clock_sel_out(),
         .ega_scandouble_active_out(),
         .ega_vmode_toggle_out(),
+        .prebios_video(1'b0),
         .splashscreen(1'b1),
         .thin_font(1'b0),
         .scandouble_en(1'b0),
