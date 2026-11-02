@@ -221,6 +221,7 @@ The main register blocks and interrupt assignments are:
 | `0080h–008Fh` | DMA page/diagnostic registers | — |
 | `00A0h–00A1h` | Slave PIC | IRQ8–15 |
 | `00C0h–00DFh` | DMA2, word channels/cascade | Channels 4–7 |
+| `01E0h–01E3h` | Tandy SN76489, second window, when enabled | — |
 | `01F0h–01F7h` | Primary IDE, 16-bit data at `1F0h` | IRQ14 |
 | `0200h–0207h` | Joystick/gameport | — |
 | `0220h` block | C/MS or Sound Blaster Pro DSP/mixer | SB IRQ5/7, DMA channel 1 |
@@ -233,9 +234,12 @@ The main register blocks and interrupt assignments are:
 | `03F8h–03FFh` | COM1 / Microsoft-compatible serial mouse | IRQ4 |
 | `8980h–898Fh` | AT286CTL runtime controls | — |
 
-Tandy SN76489 writes use `C0h–CFh` when enabled. This selection takes that
-range away from DMA2; `D0h–DFh` remains decoded for DMA2. Leave Tandy disabled
-when software needs the complete secondary-DMA register block. C/MS and Sound
+Tandy SN76489 writes use `C0h–CFh` when enabled. DMA2 keeps decoding the
+whole block: the BIOS tests its registers there at POST, so a write to `C0h–CFh`
+reaches both, in the same cycle, and the CPU waits while the chip is busy (about
+9 µs per write, as on a Tandy 1000). The same chip also answers at `1E0h–1E3h`, where the AT-class Tandy 1000 RLX and RSX have it:
+Sierra's SCI1.1 `TANDY3V.DRV` uses that port when the BIOS model byte is `FCh`
+or lower, as it is here. The Tandy DAC at `1E4h–1E7h` is not provided. C/MS and Sound
 Blaster overlap at `220h`, so **Audio 220h** selects one of them or disables
 both. OPL2 and Tandy have independent controls. MPU-401 is UART mode; an
 MT32-pi synthesizer is external hardware connected through USER I/O.
