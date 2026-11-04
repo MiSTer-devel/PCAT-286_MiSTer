@@ -15,7 +15,12 @@
 `endif
 
 module spk286_at_serial #(
-    parameter bit MPU_MODE = 1'b0
+    parameter bit MPU_MODE = 1'b0,
+    // 1: the 16750 receiver samples the stop bit at its centre and goes back to
+    // idle there, as a real 8250/16550 does, so back-to-back characters from a
+    // transmitter with a slightly different clock stay in step. COM2 only;
+    // the mouse port and the MPU-401 keep the original receiver.
+    parameter int RX_MIDSTOP = 0
 ) (
     input  logic        clk,
     input  logic        reset,
@@ -145,7 +150,7 @@ module spk286_at_serial #(
             assign rts_n = 1'b1;
             assign dtr_n = 1'b1;
         end else begin : GEN_UART_SOURCE
-            uart u_uart (
+            uart #(.RX_MIDSTOP(RX_MIDSTOP)) u_uart (
                 .clk      (clk),
                 .reset    (reset),
                 .address  (address_q),

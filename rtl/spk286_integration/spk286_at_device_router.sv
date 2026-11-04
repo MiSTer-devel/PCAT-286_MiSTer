@@ -583,7 +583,8 @@ module spk286_at_device_router #(
     );
 
     spk286_at_serial #(
-        .MPU_MODE(1'b0)
+        .MPU_MODE(1'b0),
+        .RX_MIDSTOP(1)
     ) u_uart2 (
         .clk                    (clk),
         .reset                  (reset),
