@@ -384,10 +384,17 @@ module emu_at
         .rts          (~uart1_rts_n),
         .rd           (uart1_rx)
     );
-    wire       uart2_rx = user_io_mt32 ? 1'b1 : USER_IN[0];
-    wire       uart2_cts_n = user_io_mt32 ? 1'b1 : USER_IN[3];
-    wire       uart2_dsr_n = user_io_mt32 ? 1'b1 : USER_IN[5];
-    wire       uart2_dcd_n = user_io_mt32 ? 1'b1 : USER_IN[6];
+    // COM2 inputs. COM2's TX already drives the MiSTer UART (UART_TXD), but
+    // its inputs only ever came from USER I/O, so with the MiSTer UART in
+    // modem / console / PPP mode the guest could send but never receive.
+    // Take them from the MiSTer UART, as PCXT and ao486 do, unless USER I/O
+    // is set to COM2. While the MiSTer UART is lent to MIDI, hold RX idle
+    // high (a low RX is a break) and the modem inputs deasserted. DCD follows
+    // the HPS side's DTR (sys_top wires the HPS UART null-modem style).
+    wire       uart2_rx    = user_io_com2 ? USER_IN[0] : (hps_midi | UART_RXD);
+    wire       uart2_cts_n = user_io_com2 ? USER_IN[3] : (hps_midi | UART_CTS);
+    wire       uart2_dsr_n = user_io_com2 ? USER_IN[5] : (hps_midi | UART_DSR);
+    wire       uart2_dcd_n = user_io_com2 ? USER_IN[6] : (hps_midi | UART_DSR);
     wire       uart2_tx;
     wire       uart2_rts_n;
     wire       uart2_dtr_n;
