@@ -17,12 +17,12 @@ built-in audio. BIOS/DOS, Windows 3.1, OS/2 and games have been reported working
 on MiSTer. These observations do not imply complete chipset, protected-mode
 corner-case or historical timing certification; see [qualification limits](#qualification-limits).
 
-A detailed [technical report](https://spark2k06.github.io/PCAT-286_MiSTer/report/)
+A detailed [technical report](https://aitorgomez-net.github.io/PCAT-286_MiSTer/report/)
 (architecture, memory map, I/O, video, verification and FPGA timing; source in
 [docs/report](docs/report/CORE_REPORT.html)) complements this README, and the
-[BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder) prepares
+[BIOS Builder](https://aitorgomez-net.github.io/PCAT-286_MiSTer/BIOS_Builder) prepares
 the firmware the core needs. Both are published at
-[spark2k06.github.io/PCAT-286_MiSTer](https://spark2k06.github.io/PCAT-286_MiSTer/).
+[aitorgomez-net.github.io/PCAT-286_MiSTer](https://aitorgomez-net.github.io/PCAT-286_MiSTer/).
 
 ## Build and first boot
 
@@ -64,7 +64,7 @@ build `credits/msg2hex.cc`, run it on that file and copy the resulting
 `msg.bin` to `rtl/common/msg.bin`.
 
 1. Copy the built RBF to the MiSTer SD card and load it. Build the two ROMs
-   with the [BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder)
+   with the [BIOS Builder](https://aitorgomez-net.github.io/PCAT-286_MiSTer/BIOS_Builder)
    (see [Firmware](#firmware)).
 2. Open the OSD with **Win + F12**. Select both ROMs under **System & BIOS**:
    **PCAT BIOS** and **EGA BIOS**.
@@ -91,7 +91,7 @@ ROM slot: the selected AT BIOS must support the standard AT IDE interface at
 `1F0h`/`3F6h`.
 
 The original IBM EGA BIOS and the system BIOS images are not supplied. The
-[BIOS Builder](https://spark2k06.github.io/PCAT-286_MiSTer/BIOS_Builder) (source:
+[BIOS Builder](https://aitorgomez-net.github.io/PCAT-286_MiSTer/BIOS_Builder) (source:
 [SW/ROMs/BIOS_Builder.html](SW/ROMs/BIOS_Builder.html), which also runs from a
 local copy) prepares both from reference downloads. It builds `ega_bios.rom`
 (the 16 KiB IBM 6277356 EGA ROM in CPU address order) and a 64 KiB PhoenixBIOS
@@ -581,7 +581,7 @@ repository does not resolve them or constitute a new full regression.
 ## Sources, credits and licenses
 
 Machine integration and SPK286 work are by
-[@spark2k06](https://github.com/spark2k06). The machine baseline was imported
+[@spark2k06](https://github.com/aitorgomez-net/). The machine baseline was imported
 from [PCXT-EGA_MiSTer](https://github.com/MiSTer-devel/PCXT-EGA_MiSTer), commit
 `c6b4dc8107bade3f41d94599720bd82706331c4e`. The vendored CPU's current upstream
 identity and content manifest are in [upstream.json](vendor/spk286/upstream.json);
